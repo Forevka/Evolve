@@ -1,4 +1,11 @@
-﻿using System;
+﻿using ConsoleTables;
+using EvolveDb.Configuration;
+using EvolveDb.Connection;
+using EvolveDb.Dialect;
+using EvolveDb.Metadata;
+using EvolveDb.Migration;
+using EvolveDb.Utilities;
+using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Diagnostics;
@@ -8,13 +15,6 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Transactions;
-using ConsoleTables;
-using EvolveDb.Configuration;
-using EvolveDb.Connection;
-using EvolveDb.Dialect;
-using EvolveDb.Metadata;
-using EvolveDb.Migration;
-using EvolveDb.Utilities;
 
 [assembly: InternalsVisibleTo("Evolve.Tests")]
 namespace EvolveDb
@@ -252,6 +252,7 @@ namespace EvolveDb
                 rows.AddRange(GetAllIgnoredMigrationUI());
                 rows.AddRange(GetAllExecutedMigrationUI(metadata));
                 rows.AddRange(GetAllOutOfOrderPendingMigrationUI(metadata, startVersion, lastAppliedVersion));
+                rows.AddRange(GetAllOutOfOrderPendingMigrationInfoPurposesUI(metadata, startVersion, lastAppliedVersion));
             }
             rows.AddRange(GetAllPendingMigrationUI(startVersion, lastAppliedVersion));
             rows.AddRange(GetAllPendingRepeatableMigrationUI(metadata));
@@ -308,6 +309,12 @@ namespace EvolveDb
                     .Select(x => new MigrationMetadataUI(x.Version?.Label, x.Description, "Pending"));
             }
 
+            IEnumerable<MigrationMetadataUI> GetAllOutOfOrderPendingMigrationInfoPurposesUI(IEvolveMetadata metadata, MigrationVersion startVersion, MigrationVersion lastAppliedVersion)
+            {
+                return GetAllOutOfOrderPendingMigrationNoMigration(metadata, startVersion, lastAppliedVersion)
+                    .Select(x => new MigrationMetadataUI(x.Version?.Label, x.Description, "Lost"));
+            }
+            
             IEnumerable<MigrationMetadataUI> GetAllPendingMigrationUI(MigrationVersion startVersion, MigrationVersion lastAppliedVersion)
             {
                 return GetAllPendingMigration(startVersion, lastAppliedVersion)
@@ -539,6 +546,26 @@ namespace EvolveDb
             var scripts = MigrationLoader.GetMigrations()
                                          .SkipWhile(x => x.Version < startVersion)
                                          .TakeWhile(x => x.Version <= lastAppliedVersion);
+
+            foreach (var script in scripts)
+            {
+                var appliedMigration = appliedMigrations.SingleOrDefault(x => x.Version == script.Version);
+                if (appliedMigration is null)
+                {
+                    pendingMigrations.Add(script);
+                }
+            }
+
+            return pendingMigrations;
+        }
+
+        IEnumerable<MigrationScript> GetAllOutOfOrderPendingMigrationNoMigration(IEvolveMetadata metadata, MigrationVersion startVersion, MigrationVersion lastAppliedVersion)
+        {
+            var pendingMigrations = new List<MigrationScript>();
+            var appliedMigrations = metadata.GetAllAppliedMigration();
+            var scripts = MigrationLoader.GetMigrations()
+                .SkipWhile(x => x.Version < startVersion)
+                .TakeWhile(x => x.Version <= lastAppliedVersion);
 
             foreach (var script in scripts)
             {
